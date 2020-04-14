@@ -15,14 +15,13 @@ struct DelaunayPoint {
 
 
 bool DelaunayPoint::operator==(const DelaunayPoint& rhs) {
-    if (fabs(x - rhs.x) <= 100 * std::numeric_limits<double>::epsilon()) {
-        if (fabs(y - rhs.y) <= 100 * std::numeric_limits<double>::epsilon()) {
+    if (fabs(x - rhs.x) <= std::numeric_limits<double>::epsilon()) {
+        if (fabs(y - rhs.y) <= std::numeric_limits<double>::epsilon()) {
             return true;
         }
     }
     return false;
 }
-
 
 struct Rectangle {
     DelaunayPoint A;
@@ -30,6 +29,14 @@ struct Rectangle {
     DelaunayPoint C;
     DelaunayPoint D;
 };
+
+void _sort_rectangle(Rectangle& R) {
+    while (!(R.A.x <= R.B.x && R.A.x <= R.C.x && R.A.x <= R.D.x && R.A.y <= R.B.y && R.A.y <= R.C.y && R.A.y <= R.D.y) && !(R.B.y <= R.C.y && R.B.y <= R.D.y) && !(R.C.y <= R.D.y)) {
+        std::swap(R.A, R.D);
+        std::swap(R.D, R.C);
+        std::swap(R.C, R.B);
+    }
+}
 
 double _super_size = 100000;
 
@@ -52,7 +59,7 @@ std::vector<DelaunayPoint> _jarvis(std::vector<DelaunayPoint> S) {
     int l = 0;
     int p = 0;
     int q = 0;
-    DelaunayPoint point_on_hull{10000, 10000};
+    DelaunayPoint point_on_hull{_super_size, _super_size};
     int i = 0;
     for (auto& s : S) {
         if (s.x < point_on_hull.x) {
@@ -74,6 +81,8 @@ std::vector<DelaunayPoint> _jarvis(std::vector<DelaunayPoint> S) {
         p = q;
         if (p == l) stop = true;
     }
+
+    // We need P on standard form - The vertices are listed in counterclockwise order with smallest y first
     int smallest_y_index = 0;
     double smallest_y = _super_size;
     for (int i = 0; i < P.size(); ++i) {
@@ -82,8 +91,8 @@ std::vector<DelaunayPoint> _jarvis(std::vector<DelaunayPoint> S) {
             smallest_y_index = i;
         }
     }
-    // We need P on standard form - The vertices are listed in counterclockwise order with smallest y first
     std::rotate(P.begin(), P.begin() + smallest_y_index, P.end()); 
+    P.push_back(P.at(0));
 
     std::ofstream _jarvis_file;
     _jarvis_file.open("csv/jarvis.csv", std::ios::trunc);
@@ -100,9 +109,10 @@ Rectangle _get_rectangle(double x0, double y0, double x1, double y1, double l1, 
         double len = _len(x0, y0, x1, y1);
         double ux = (x1 - x0) / len;
         double uy = (y1 - y0) / len;
+        d = d + (y1 - y0);
         return DelaunayPoint{x0 + ux * d, y0 + uy * d};
     };
-    auto perp_line = [&resized](double x0, double y0, double x1, double y1, double d) {
+    auto perp_line = [](double x0, double y0, double x1, double y1, double d) {
         double len = _len(x0, y0, x1, y1);
         double ux = (y0 - y1) / len;
         double uy = (x1 - x0) / len;
@@ -116,9 +126,10 @@ Rectangle _get_rectangle(double x0, double y0, double x1, double y1, double l1, 
     y1 = B.y;
     DelaunayPoint C{perp_line(x0, y0, x1, y1, l1)};
     DelaunayPoint D{perp_line(x1, y1, x0, y0, -l1)};
-    
-    Rectangle rectangle{A, B, C, D};
-    return rectangle;
+
+    Rectangle R{A, B, C, D};
+    _sort_rectangle(R);
+    return R;
 }
 
 // 0 Point inside, 1 Move up, 2 Move Left, 3 Move Down, 4 Move Right
@@ -135,55 +146,125 @@ int _pip(Rectangle P, DelaunayPoint p) { // Input: Convex counterclockwise polyg
     double A = -(y1 - y0);
     double B = x1 - x0;
     double C = -(A * x0 + B * y0);
-    double D = A * p.x + B * p.y + C;
+    double D = A * p.x + B * p.y + C; // If D < 0 then p is not to the left of the line (x0, y0), (x1, y1) 
     if (D < 0) {
-        return 1;
+        return 3;
     }
     A = -(y2 - y1);
     B = x2 - x1;
     C = -(A * x1 + B * y1);
     D = A * p.x + B * p.y + C;
     if (D < 0) {
-        return 2;
+        return 4;
     }
     A = -(y3 - y2);
     B = x3 - x2;
     C = -(A * x2 + B * y2);
     D = A * p.x + B * p.y + C;
     if (D < 0) {
-        return 3;
+        return 1;
     }
     A = -(y0 - y3);
     B = x0 - x3;
     C = -(A * x3 + B * y3);
     D = A * p.x + B * p.y + C;
     if (D < 0) {
-        return 4;
+        return 2;
     }
     return 0; 
 }
 
-void _move_rectangle(Rectangle& R, double distance, int direction) { // 1 Move up, 2 Move Left, 3 Move Down, 4 Move Right
-    if (direction == 1) {
-        R.A.y += distance;
-        R.B.y += distance;
-        R.C.y += distance;
-        R.D.y += distance;
-    } else if (direction == 2) {
-        R.A.x -= distance;
-        R.B.x -= distance;
-        R.C.x -= distance;
-        R.D.x -= distance;
-    } else if (direction == 3) {
-        R.A.y -= distance;
-        R.B.y -= distance;
-        R.C.y -= distance;
-        R.D.y -= distance;
-    } else if (direction == 4) {
-        R.A.x += distance;
-        R.B.x += distance;
-        R.C.x += distance;
-        R.D.x += distance;
+void _rotate_rectangle(Rectangle& R, double rad) {
+    auto rotate_point = [](DelaunayPoint& p, const Rectangle& R, double rad) {
+        double new_px = p.x * cos(rad) - p.y * sin(rad);
+        double new_py = p.x * sin(rad) + p.y * cos(rad);
+        p.x = new_px;
+        p.y = new_py;
+    };
+    rotate_point(R.A, R, rad);
+    rotate_point(R.B, R, rad);
+    rotate_point(R.C, R, rad);
+    rotate_point(R.D, R, rad);
+
+    _sort_rectangle(R);
+}
+
+void _move_rectangle_onto_polygon(Rectangle& R, const std::vector<DelaunayPoint>& P) { 
+    auto move = [](Rectangle& R, double distance, int direction) { // 1 Move up, 2 Move Left, 3 Move Down, 4 Move Right
+        if (direction == 1) {
+            R.A.y += distance;
+            R.B.y += distance;
+            R.C.y += distance;
+            R.D.y += distance;
+        } else if (direction == 2) {
+            R.A.x -= distance;
+            R.B.x -= distance;
+            R.C.x -= distance;
+            R.D.x -= distance;
+        } else if (direction == 3) {
+            R.A.y -= distance;
+            R.B.y -= distance;
+            R.C.y -= distance;
+            R.D.y -= distance;
+        } else if (direction == 4) {
+            R.A.x += distance;
+            R.B.x += distance;
+            R.C.x += distance;
+            R.D.x += distance;
+        }
+    };
+
+    auto move_rectangle = [&move](Rectangle& R, const std::vector<DelaunayPoint>& P) {
+        double step_size_distance = 0.1; // Depends on the area of P
+        bool fail = false;
+        for (auto& p : P) {
+            int direction = _pip(R, p);
+            int counter = 0;
+            while (direction != 0 && !fail) {
+                move(R, step_size_distance, direction);
+                int prev_direction = direction;
+                direction = _pip(R, p);
+                if (direction == 1 && prev_direction == 3) direction = 0;
+                if (direction == 2 && prev_direction == 4) direction = 0;
+                if (counter > 1000) {
+                    fail = true;
+                    std::cout << "Fail in move rectangle\n";
+                }
+                ++counter;
+            }
+        }
+        double step_size_rotation = 0.01; 
+        int best_pip_counter = 0;
+        double best_rotation = 0;
+        for (double rad = 0.0; rad < 1.6; rad += step_size_rotation) {
+            _rotate_rectangle(R, rad);
+            best_rotation += rad;
+            int pip_counter = 0;
+            for (auto& p : P) {
+                if (_pip(R, p) == 0) {
+                    ++pip_counter; 
+                }
+            }
+            if (pip_counter > best_pip_counter) {
+                best_rotation = 0;
+                best_pip_counter = pip_counter;
+            }
+        }
+        _rotate_rectangle(R, -best_rotation);
+        
+        _rotate_rectangle(R, M_PI / 2);
+        int pip_counter = 0;
+        for (auto& p : P) {
+            if (_pip(R, p) == 0) {
+                ++pip_counter; 
+            }
+        }
+        if (pip_counter < best_pip_counter) {
+            _rotate_rectangle(R, M_PI / 2);
+        }
+    };
+    for (int i = 0; i < 10; ++i) {
+        move_rectangle(R, P);
     }
 }
 
@@ -248,10 +329,10 @@ void rotating_calipers(std::vector<DelaunayPoint> P) {
 
         double d1 = 0;
         double d2 = 0;
-        if (P.at(i).x - P.at(inc(i, n)).x <= 100 * std::numeric_limits<double>::epsilon()) { // Does not seem to work
+        if (P.at(i).x - P.at(inc(i, n)).x <= std::numeric_limits<double>::epsilon()) { // Does not seem to work
             d1 = fabs(P.at(k).x - P.at(i).x);
             d2 = fabs(P.at(m).y - P.at(j).y);
-        } else if (P.at(i).y - P.at(inc(i, n)).y <= 100 * std::numeric_limits<double>::epsilon()) {
+        } else if (P.at(i).y - P.at(inc(i, n)).y <= std::numeric_limits<double>::epsilon()) {
             d1 = fabs(P.at(k).y - P.at(i).y);
             d2 = fabs(P.at(m).x - P.at(j).x);
         } else {
@@ -272,25 +353,7 @@ void rotating_calipers(std::vector<DelaunayPoint> P) {
     double x1 = P.at(inc(vertex, n)).x;
     double y1 = P.at(inc(vertex, n)).y;
     Rectangle rectangle = std::move(_get_rectangle(x0, y0, x1, y1, l1, l2));
-
-    // double distance = 0.2;
-    // bool fail = false;
-    // for (auto& p : P) {
-    //     int direction = _pip(rectangle, p);
-    //     int counter = 0;
-    //     while (direction != 0 && !fail) {
-    //         _move_rectangle(rectangle, distance, direction);
-    //         int prev_direction = direction;
-    //         direction = _pip(rectangle, p);
-    //         if (direction == 1 && prev_direction == 3) direction = 0;
-    //         if (direction == 2 && prev_direction == 4) direction = 0;
-    //         if (counter > 1000) {
-    //             fail = true;
-    //             std::cout << "Fail. Some points probably have the same x coordiante\n";
-    //         }
-    //         ++counter;
-    //     }
-    // }
+    _move_rectangle_onto_polygon(rectangle, P);
 
     std::ofstream _rotating_calipers_file;
     _rotating_calipers_file.open("csv/rotating_calipers.csv", std::ios::trunc);
@@ -298,6 +361,7 @@ void rotating_calipers(std::vector<DelaunayPoint> P) {
     _rotating_calipers_file << rectangle.B.x << ", " << rectangle.B.y << "\n";
     _rotating_calipers_file << rectangle.C.x << ", " << rectangle.C.y << "\n";
     _rotating_calipers_file << rectangle.D.x << ", " << rectangle.D.y << "\n";
+    _rotating_calipers_file << rectangle.A.x << ", " << rectangle.A.y << "\n";
     _rotating_calipers_file.close();
 
 }
@@ -307,10 +371,15 @@ int main() {
     double upper_bound = 10;
     std::uniform_real_distribution<double> unif(lower_bound,upper_bound);
     std::default_random_engine re;
-
     std::vector<DelaunayPoint> P;
-    for (size_t i = 0; i < 5; ++i) {
+    for (size_t i = 0; i < 100; ++i) {
         P.push_back(DelaunayPoint{unif(re), unif(re)});
     }
+    std::ofstream _points_file;
+    _points_file.open("csv/points.csv", std::ios::trunc);
+    for (int i = 0; i < P.size(); ++i) {
+        _points_file << P.at(i).x << ", " << P.at(i).y << "\n";
+    }
+    _points_file.close();
     rotating_calipers(_jarvis(P));
 }
